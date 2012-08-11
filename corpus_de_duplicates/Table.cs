@@ -68,7 +68,7 @@ namespace corpus_de_duplicates
                 for (int i = 0; i < _combinations.Count; i++)
 			    {
                     sql_cols.Add(string.Format("{0} BIGINT NOT NULL", _combine_cols[i]));			 
-                    sql_indexes.Add(string.Format("CREATE INDEX {0} ON corpus({1}); ", _combine_indexes, _combine_cols));
+                    sql_indexes.Add(string.Format("CREATE INDEX {0} ON corpus({1}); ", _combine_indexes[i], _combine_cols[i]));
 			    }
 
                 string sql = "DROP TABLE IF EXISTS `corpus`; " +
@@ -146,6 +146,7 @@ namespace corpus_de_duplicates
 
         public bool insert(ulong fingerprints)
         {
+
             return true;
         }
         public int find()
