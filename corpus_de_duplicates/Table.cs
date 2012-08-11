@@ -45,8 +45,6 @@ namespace corpus_de_duplicates
         private Dictionary<string, ulong> _combine_bit_mask;
 
         private combinations<int> _combinations;
-        private List<string> _combine_cols;
-        private List<string> _combine_indexes;
         #endregion
 
         #region
@@ -58,6 +56,7 @@ namespace corpus_de_duplicates
             _num_diff_bits = num_diff_bits;
             _bit_mask = new List<ulong>(bit_mask);
             generate_combine();
+            connect(_server_config);
         }
         public void reset()
         {
@@ -65,11 +64,12 @@ namespace corpus_de_duplicates
             {
                 List<string> sql_cols = new List<string>();
                 List<string> sql_indexes = new List<string>();
-                for (int i = 0; i < _combinations.Count; i++)
-			    {
-                    sql_cols.Add(string.Format("{0} BIGINT NOT NULL", _combine_cols[i]));			 
-                    sql_indexes.Add(string.Format("CREATE INDEX {0} ON corpus({1}); ", _combine_indexes[i], _combine_cols[i]));
-			    }
+                foreach (IList<int> item in _combinations)
+                {
+                    string com = getstring<int>(item);
+                    sql_cols.Add(string.Format("{0} BIGINT NOT NULL", "combine_" + com));
+                    sql_indexes.Add(string.Format("CREATE INDEX {0} ON corpus({1}); ", "index_"+com, "combine_"+com));
+                }
 
                 string sql = "DROP TABLE IF EXISTS `corpus`; " +
                     "CREATE TABLE corpus( " +
@@ -87,23 +87,18 @@ namespace corpus_de_duplicates
                 {
                     Console.WriteLine("ERROR occured at create tables, MESSAGE:" + ex);
                 }
-                Console.ReadLine();
             }
         }
 
         private void generate_combine()
         {
             _combine_bit_mask = new Dictionary<string, ulong>();
-            _combine_cols = new List<string>();
-            _combine_indexes = new List<string>();
 
             IList<int> array = Enumerable.Range(0, _count_blocks).ToList<int>();
             _combinations = new combinations<int>(array, _count_blocks - _num_diff_bits);
             foreach (IList<int> item in _combinations)
             {
-                string com = GetString<int>(item);
-                _combine_cols.Add(string.Format("combine_{0}", com));
-                _combine_indexes.Add(string.Format("index_{0}", com));
+                string com = getstring<int>(item);
 
                 ulong combine_mask = 0;
                 foreach (int li in item)
@@ -114,7 +109,7 @@ namespace corpus_de_duplicates
             }
         }
 
-        private static string GetString<T>(IList<T> list)
+        private static string getstring<T>(IList<T> list)
         {
             StringBuilder sb = new StringBuilder();
             foreach (T item in list)
@@ -146,9 +141,31 @@ namespace corpus_de_duplicates
 
         public bool insert(ulong fingerprints)
         {
+            MySqlDataReader data_reader;
+            MySqlCommand cmd = new MySqlCommand(generate_query(fingerprints), _conn);
+            try
+            {
+                data_reader = cmd.ExecuteReader();
+                data_reader.Read();
+            }
+            catch (MySqlException ex)
+            {
+                Console.WriteLine("ERROR occured at create tables, MESSAGE:" + ex);
+            }
 
+            Console.WriteLine(string.Format("I'm {0}", generate_query(fingerprints)));
             return true;
         }
+        private string generate_query(ulong fingerprints)
+        {
+            List<string> combine_cols_query = new List<string>();
+            foreach (var item in _combine_bit_mask)
+            {
+                combine_cols_query.Add(string.Format("combine_{0} = {1}", item.Key, (item.Value&fingerprints)));
+            }
+            return "SELECT id FROM corpus WHERE " + string.Join(" OR ", combine_cols_query) + ";";
+        }
+
         public int find()
         {
             return 0;

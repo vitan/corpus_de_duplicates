@@ -29,12 +29,14 @@ namespace corpus_de_duplicates
             bit_mask.Add(0xFFE00);
             bit_mask.Add(0x1FF);
 
-            foreach (ulong item in bit_mask)
-            {
-                Console.WriteLine("{0:x}", item);
-            }
+            //foreach (ulong item in bit_mask)
+            //{
+            //    Console.WriteLine("{0:x}", item);
+            //}
             Table table = new Table(server_config, count_bits, count_blocks, num_diff_bits, bit_mask);
-            table.reset();
+            //table.reset();
+            table.insert(0xFFE0000000000000);
+            Console.ReadLine();
         }
     }
 }
