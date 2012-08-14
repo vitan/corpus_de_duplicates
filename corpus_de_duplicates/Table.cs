@@ -63,15 +63,15 @@ namespace corpus_de_duplicates
                 foreach (IList<int> item in _combinations)
                 {
                     string com = getstring<int>(item);
-                    sql_cols.Add(string.Format("{0} BIGINT NOT NULL", "combine_" + com));
+                    sql_cols.Add(string.Format("{0} BIGINT UNSIGNED NOT NULL", "combine_" + com));
                     sql_indexes.Add(string.Format("CREATE INDEX {0} ON corpus({1}); ", "index_"+com, "combine_"+com));
                 }
 
                 string sql = "DROP TABLE IF EXISTS `corpus`; " +
                     "CREATE TABLE corpus( " +
                     "id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, " +
-                    "text TEXT CHARACTER SET utf8 NOT NULL, " +
-                    "fingerprints BIGINT NOT NULL, " +
+                    "article TEXT CHARACTER SET utf8 NOT NULL, " +
+                    "fingerprints BIGINT UNSIGNED NOT NULL, " +
                     string.Join(", ", sql_cols.ToArray())+ ");" +
                     string.Join("", sql_indexes.ToArray());
                 MySqlCommand cmd = new MySqlCommand(sql, conn);
@@ -172,7 +172,7 @@ namespace corpus_de_duplicates
                 }
                 catch (MySqlException ex)
                 {
-                    Console.WriteLine("ERROR occured at create tables, MESSAGE:" + ex);
+                    Console.WriteLine("ERROR occured at insert, MESSAGE:" + ex);
                 }
                 finally
                 {
@@ -185,7 +185,21 @@ namespace corpus_de_duplicates
 
         private bool is_similarity(ulong source, ulong target)
         {
-
+            ulong x = (source ^ target) & (((1UL << _count_bits - 1) - 1) ^ (1UL << _count_bits - 1));
+            int tot = 0;
+            while (x > 0)
+            {
+                tot += 1;
+                if (tot > 3)
+                {
+                    return false;
+                }
+                x &= x - 1;
+            }
+            if (tot > 3)
+            {
+                return false;
+            }
             return true;
         }
 
@@ -198,13 +212,13 @@ namespace corpus_de_duplicates
                 combine_cols_insert.Add(string.Format("combine_{0}", item.Key), (item.Value & fingerprints));
                 //Console.WriteLine(string.Format("{0}, {1:x}, {2:x}", item.Key, item.Value, (item.Value & fingerprints)));
             }
-            return "INSERT INTO corpus(text, " +
+            return "INSERT INTO corpus(article, " +
                 "fingerprints, " + 
                 string.Join(",", combine_cols_insert.Keys) +
-                ") VALUES (" +
-                text +", " + 
-                fingerprints + ", " + 
-                string.Join(", ", combine_cols_insert.Values) + ");";
+                ") VALUES ('" +
+                text +"', '" + 
+                fingerprints + "', '" + 
+                string.Join("', '", combine_cols_insert.Values) + "');";
         }
 
         private string generate_query_sql(ulong fingerprints)

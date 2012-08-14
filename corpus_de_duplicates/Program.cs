@@ -35,7 +35,11 @@ namespace corpus_de_duplicates
             //}
             Table table = new Table(server_config, count_bits, count_blocks, num_diff_bits, bit_mask);
             //table.reset();
-            table.insert("abcde", 0xFFE0000000000000);
+            if (table.insert("abcdew", 0xFFEFF00000000000))
+            {
+                Console.WriteLine("insert ok!");
+            }
+            Console.WriteLine("insert failed");
             Console.ReadLine();
         }
     }
