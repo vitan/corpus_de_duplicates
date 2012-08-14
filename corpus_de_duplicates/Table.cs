@@ -19,10 +19,6 @@ namespace corpus_de_duplicates
         /// </summary>
         private Dictionary<string, string> _server_config;
         /// <summary>
-        /// 
-        /// </summary>
-        private MySqlConnection _conn;
-        /// <summary>
         /// bits count of simhash's fingerprints
         /// ps: now I prefer 64bits
         /// </summary>
@@ -56,11 +52,11 @@ namespace corpus_de_duplicates
             _num_diff_bits = num_diff_bits;
             _bit_mask = new List<ulong>(bit_mask);
             generate_combine();
-            connect(_server_config);
         }
         public void reset()
         {
-            if (connect(_server_config))
+            MySqlConnection conn = new MySqlConnection();
+            if (connect(_server_config, ref conn))
             {
                 List<string> sql_cols = new List<string>();
                 List<string> sql_indexes = new List<string>();
@@ -78,14 +74,18 @@ namespace corpus_de_duplicates
                     "fingerprints BIGINT NOT NULL, " +
                     string.Join(", ", sql_cols.ToArray())+ ");" +
                     string.Join("", sql_indexes.ToArray());
-                MySqlCommand cmd = new MySqlCommand(sql, _conn);
+                MySqlCommand cmd = new MySqlCommand(sql, conn);
                 try
                 {
                     cmd.ExecuteNonQuery();
                 }
-                catch(MySqlException ex)
+                catch (MySqlException ex)
                 {
                     Console.WriteLine("ERROR occured at create tables, MESSAGE:" + ex);
+                }
+                finally
+                {
+                    conn.Close();
                 }
             }
         }
@@ -119,57 +119,104 @@ namespace corpus_de_duplicates
             return sb.ToString();
         }
 
-        private bool connect(Dictionary<string, string> server_config)
+        private bool connect(Dictionary<string, string> server_config, ref MySqlConnection conn)
         {
-            if (_conn != null)
-                _conn.Close();
+            if (conn != null)
+                conn.Close();
 
             string connStr = String.Format("server={0};user id={1}; password={2}; database={3}; pooling=false",
                 server_config["ipaddr"], server_config["userid"], server_config["password"], server_config["db"]);
 
             try
             {
-                _conn = new MySqlConnection(connStr);
-                _conn.Open();
+                conn = new MySqlConnection(connStr);
+                conn.Open();
             }
-            catch(MySqlException ex)
+            catch (MySqlException ex)
             {
                 return false;
             }
             return true;
         }
 
-        public bool insert(ulong fingerprints)
+        public bool insert(string text, ulong fingerprints)
         {
-            MySqlDataReader data_reader;
-            MySqlCommand cmd = new MySqlCommand(generate_query(fingerprints), _conn);
-            try
+            MySqlConnection conn = new MySqlConnection();
+            if (connect(_server_config, ref conn))
             {
-                data_reader = cmd.ExecuteReader();
-                data_reader.Read();
-            }
-            catch (MySqlException ex)
-            {
-                Console.WriteLine("ERROR occured at create tables, MESSAGE:" + ex);
-            }
+                MySqlCommand cmd = new MySqlCommand(generate_query_sql(fingerprints), conn);
+                try
+                {
+                    MySqlDataReader data_reader = cmd.ExecuteReader();
+                    Dictionary<int, ulong> id_dict = new Dictionary<int, ulong>();
+                    while (data_reader.Read())
+                    {
+                        id_dict.Add(data_reader.GetInt32(0), data_reader.GetUInt64(1));
+                    }
+                    data_reader.Close();
 
-            Console.WriteLine(string.Format("I'm {0}", generate_query(fingerprints)));
+                    if (id_dict.Count() != 0)
+                    {
+                        //get the haming distance by diff
+                        foreach (var item in id_dict)
+                        {
+                            if (is_similarity(fingerprints, item.Value))
+                            {
+                                return false;
+                            }
+                        }
+                    }
+                    //query is over & no similarity fingerprints, can insert the record
+                    cmd = new MySqlCommand(generate_insert_sql(text, fingerprints), conn);
+                    cmd.ExecuteNonQuery();
+                }
+                catch (MySqlException ex)
+                {
+                    Console.WriteLine("ERROR occured at create tables, MESSAGE:" + ex);
+                }
+                finally
+                {
+                    conn.Close();
+                }
+                return true;
+            }
+            return false;
+        }
+
+        private bool is_similarity(ulong source, ulong target)
+        {
+
             return true;
         }
-        private string generate_query(ulong fingerprints)
+
+        private string generate_insert_sql(string text, ulong fingerprints)
+        {
+            //todo
+            Dictionary<string, ulong> combine_cols_insert = new Dictionary<string,ulong>();
+            foreach (var item in _combine_bit_mask)
+            {
+                combine_cols_insert.Add(string.Format("combine_{0}", item.Key), (item.Value & fingerprints));
+                //Console.WriteLine(string.Format("{0}, {1:x}, {2:x}", item.Key, item.Value, (item.Value & fingerprints)));
+            }
+            return "INSERT INTO corpus(text, " +
+                "fingerprints, " + 
+                string.Join(",", combine_cols_insert.Keys) +
+                ") VALUES (" +
+                text +", " + 
+                fingerprints + ", " + 
+                string.Join(", ", combine_cols_insert.Values) + ");";
+        }
+
+        private string generate_query_sql(ulong fingerprints)
         {
             List<string> combine_cols_query = new List<string>();
             foreach (var item in _combine_bit_mask)
             {
                 combine_cols_query.Add(string.Format("combine_{0} = {1}", item.Key, (item.Value&fingerprints)));
             }
-            return "SELECT id FROM corpus WHERE " + string.Join(" OR ", combine_cols_query) + ";";
+            return "SELECT id, fingerprints FROM corpus WHERE " + string.Join(" OR ", combine_cols_query) + ";";
         }
 
-        public int find()
-        {
-            return 0;
-        }
         #endregion
     }
 }
