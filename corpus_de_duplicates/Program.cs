@@ -47,18 +47,6 @@ namespace corpus_de_duplicates
 
             //test_fingerprint();
 
-            string contents = "<title>你是谁啊. 哈哈哈哈</title>\n黄药师؛郭靖؛黄蓉…张无忌؛ 周伯通!东邪：西毒؛南帝؟北丐\t中神通\n";
-            int title_beg = 0;
-            int title_end = contents.IndexOf("</title>\n");
-            string title = contents.Substring(title_beg, title_end - title_beg).Replace("<title>", "");
-            List<string> sentences = split_article(contents.Substring(title_end + 9));
-
-            Console.WriteLine(title);
-            Console.WriteLine("llllllll");
-            foreach (string item in sentences)
-            {
-                Console.WriteLine(item);
-            }
             Console.ReadLine();
         }
         static void test_fingerprint()
@@ -107,10 +95,11 @@ namespace corpus_de_duplicates
             string contents = string.Empty;
             for(int i=0; i<files.Count(); i++)
             {
-                Dictionary<string, string> article = new Dictionary<string, string>();
-                Dictionary<string, string> original = new Dictionary<string, string>();
-                Dictionary<string, string> translation = new Dictionary<string, string>();
-                Dictionary<string, string> link = new Dictionary<string, string>();
+                Article article = new Article();
+                Original original = new Original();
+                Translation translation = new Translation();
+                Link link = new Link();
+                Dictionary<string, ulong> sentences_fingerprints = new Dictionary<string, ulong>();
 
                 using (FileStream fs = new FileStream(files[i], FileMode.Open))
                 {
@@ -123,11 +112,24 @@ namespace corpus_de_duplicates
                         int title_end = contents.IndexOf("</title>\n");
                         string title = contents.Substring(title_beg, title_end-title_beg).Replace("<title>", "");
                         List<string> sentences = split_article(contents.Substring(title_end+9));
+                        foreach (string item in sentences)
+                        {
+                            sentences_fingerprints.Add(item, generate_fingerprint(item, 3, 64));
+                        }
 
+                        article.id = i;
+                        article.title = title;
+                        article.state = 0;
+                        article.count = sentences.Count();
 
+                        original.id = i;
+                        original.sentences_fingerprint = sentences_fingerprints;
 
-                        article.Add("article_id", Convert.ToString(i));
-                        article.Add("title", title);
+                        link.article = article;
+                        link.original = original;
+                        link.translation = translation;
+
+                        table.insert_sentences(link);
                     }
 
                     int count = 1;

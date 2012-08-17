@@ -7,6 +7,30 @@ using MySql.Data.MySqlClient;
 
 namespace corpus_de_duplicates
 {
+    struct Article
+    {
+        public int id;
+        public string title;
+        public int state;
+        public string translator;
+        public int count;
+    }
+    struct Original
+    {
+        public int id;
+        public Dictionary<string, ulong> sentences_fingerprint;
+    }
+    struct Translation
+    {
+        public int id;
+        public Dictionary<string, ulong> sentences_fingerprint;
+    }
+    struct Link
+    {
+        public Article article;
+        public Original original;
+        public Translation translation;
+    }
     class Table
     {
         #region
@@ -199,7 +223,7 @@ namespace corpus_de_duplicates
             return files;
         }
 
-        public bool insert_sentences(Dictionary<string, string> article, Dictionary<string, string> original, Dictionary<string, string> translation, Dictionary<string, string> link)
+        public bool insert_sentences(Link link)
         {
 
             return false;
