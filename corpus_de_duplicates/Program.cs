@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using System.Text.RegularExpressions;
 using System.IO;
 
 namespace corpus_de_duplicates
@@ -46,7 +45,20 @@ namespace corpus_de_duplicates
             //        + ts.Seconds.ToString() + "秒";
             //Console.WriteLine("{0}", dateDiff);
 
-            test_fingerprint();
+            //test_fingerprint();
+
+            string contents = "<title>你是谁啊. 哈哈哈哈</title>\n黄药师؛郭靖؛黄蓉…张无忌؛ 周伯通!东邪：西毒؛南帝؟北丐\t中神通\n";
+            int title_beg = 0;
+            int title_end = contents.IndexOf("</title>\n");
+            string title = contents.Substring(title_beg, title_end - title_beg).Replace("<title>", "");
+            List<string> sentences = split_article(contents.Substring(title_end + 9));
+
+            Console.WriteLine(title);
+            Console.WriteLine("llllllll");
+            foreach (string item in sentences)
+            {
+                Console.WriteLine(item);
+            }
             Console.ReadLine();
         }
         static void test_fingerprint()
@@ -93,19 +105,29 @@ namespace corpus_de_duplicates
             table.reset_tables_exclude_corpus();
             List<string> files = table.query_from_corpus();
             string contents = string.Empty;
-            foreach (string file in files)
+            for(int i=0; i<files.Count(); i++)
             {
                 Dictionary<string, string> article = new Dictionary<string, string>();
                 Dictionary<string, string> original = new Dictionary<string, string>();
                 Dictionary<string, string> translation = new Dictionary<string, string>();
+                Dictionary<string, string> link = new Dictionary<string, string>();
 
-                using (FileStream fs = new FileStream(file, FileMode.Open))
+                using (FileStream fs = new FileStream(files[i], FileMode.Open))
                 {
                     using (StreamReader r = new StreamReader(fs))
                     {
-                        contents = r.ReadToEnd();
+                        contents = r.ReadToEnd().Trim();
+
                         //get the title from contents
-                        Regex title_regex = new Regex("<title>.*?</title>\n", RegexOptions.IgnoreCase);
+                        int title_beg = 0;
+                        int title_end = contents.IndexOf("</title>\n");
+                        string title = contents.Substring(title_beg, title_end-title_beg).Replace("<title>", "");
+                        List<string> sentences = split_article(contents.Substring(title_end+9));
+
+
+
+                        article.Add("article_id", Convert.ToString(i));
+                        article.Add("title", title);
                     }
 
                     int count = 1;
@@ -134,10 +156,16 @@ namespace corpus_de_duplicates
 
         static List<string> split_article(string article)
         {
+            string[] split_separate = {".", "؛", "…", "!", "؟", "\n", "\t"};
+
             List<string> sentences = new List<string>();
             if (!string.IsNullOrEmpty(article))
             {
-                
+                foreach (string item in split_separate)
+                {
+                    article = article.Replace(item, item + "##");
+                }
+                sentences = article.Split(new string[]{"##"}, StringSplitOptions.RemoveEmptyEntries).ToList();
             }
             return sentences;
         }
