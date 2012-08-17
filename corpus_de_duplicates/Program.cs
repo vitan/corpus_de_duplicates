@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.IO;
 
 namespace corpus_de_duplicates
@@ -60,10 +61,10 @@ namespace corpus_de_duplicates
                 }
             }
         }
-        static void load_data(Table table)
+        static void load_data_text_deduplicates(Table table)
         {
             string hashfile = @"E:\smtproject\corpus_collection\data\after_simhash";
-            table.reset();
+            table.reset_table_corpus();
             string contents = string.Empty;
             using (FileStream fs = new FileStream(hashfile, FileMode.Open))
             {
@@ -77,22 +78,68 @@ namespace corpus_de_duplicates
                 foreach (string line in contents.Split('\n'))
                 {
                     string[] item = line.Split(' ');
-                    //using (FileStream fsl = new FileStream(item[0], FileMode.Open))
-                    //{
-                    //    using (StreamReader r = new StreamReader(fsl, Encoding.UTF8))
-                    //    {
-                            //if(table.insert(mysql_replace(r.ReadToEnd()), Convert.ToUInt64(item[1])))
-                            if (table.insert(item[0], Convert.ToUInt64(item[1])))
-                            {
-                                count += 1;
-                            }
-                    //    }
-                    //}
-                    //Console.WriteLine(string.Format("{0}", sum));
+                    if (table.insert_corpus(item[0], Convert.ToUInt64(item[1])))
+                    {
+                        count += 1;
+                    }
                     sum += 1;
                 }
                 Console.WriteLine(string.Format("count: {0}, sum: {1}", count, sum));
             }
+        }
+
+        static void load_data_sentences_deduplicates(Table table)
+        {
+            table.reset_tables_exclude_corpus();
+            List<string> files = table.query_from_corpus();
+            string contents = string.Empty;
+            foreach (string file in files)
+            {
+                Dictionary<string, string> article = new Dictionary<string, string>();
+                Dictionary<string, string> original = new Dictionary<string, string>();
+                Dictionary<string, string> translation = new Dictionary<string, string>();
+
+                using (FileStream fs = new FileStream(file, FileMode.Open))
+                {
+                    using (StreamReader r = new StreamReader(fs))
+                    {
+                        contents = r.ReadToEnd();
+                        //get the title from contents
+                        Regex title_regex = new Regex("<title>.*?</title>\n", RegexOptions.IgnoreCase);
+                    }
+
+                    int count = 1;
+                    int sum = 1;
+                    foreach (string line in contents.Split('\n'))
+                    {
+                        string[] item = line.Split(' ');
+                        using (FileStream fsl = new FileStream(item[0], FileMode.Open))
+                        {
+                            using (StreamReader r = new StreamReader(fsl, Encoding.UTF8))
+                            {
+                                if (table.insert_corpus(mysql_replace(r.ReadToEnd()), Convert.ToUInt64(item[1])))
+                                    if (table.insert_corpus(item[0], Convert.ToUInt64(item[1])))
+                                    {
+                                        count += 1;
+                                    }
+                            }
+                        }
+                        Console.WriteLine(string.Format("{0}", sum));
+                        sum += 1;
+                    }
+                    Console.WriteLine(string.Format("count: {0}, sum: {1}", count, sum));
+                }
+            }
+        }
+
+        static List<string> split_article(string article)
+        {
+            List<string> sentences = new List<string>();
+            if (!string.IsNullOrEmpty(article))
+            {
+                
+            }
+            return sentences;
         }
 
         static string mysql_replace(string s)

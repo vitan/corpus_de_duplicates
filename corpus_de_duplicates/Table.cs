@@ -53,42 +53,6 @@ namespace corpus_de_duplicates
             _bit_mask = new List<ulong>(bit_mask);
             generate_combine();
         }
-        public void reset()
-        {
-            MySqlConnection conn = new MySqlConnection();
-            if (connect(_server_config, ref conn))
-            {
-                List<string> sql_cols = new List<string>();
-                List<string> sql_indexes = new List<string>();
-                foreach (IList<int> item in _combinations)
-                {
-                    string com = getstring<int>(item);
-                    sql_cols.Add(string.Format("{0} BIGINT UNSIGNED NOT NULL", "combine_" + com));
-                    sql_indexes.Add(string.Format("CREATE INDEX {0} ON corpus({1}); ", "index_"+com, "combine_"+com));
-                }
-
-                string sql = "DROP TABLE IF EXISTS `corpus`; " +
-                    "CREATE TABLE corpus( " +
-                    "id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, " +
-                    "article TEXT CHARACTER SET utf8 NOT NULL, " +
-                    "fingerprints BIGINT UNSIGNED NOT NULL, " +
-                    string.Join(", ", sql_cols.ToArray())+ ");" +
-                    string.Join("", sql_indexes.ToArray());
-                MySqlCommand cmd = new MySqlCommand(sql, conn);
-                try
-                {
-                    cmd.ExecuteNonQuery();
-                }
-                catch (MySqlException ex)
-                {
-                    Console.WriteLine("ERROR occured at create tables, MESSAGE:" + ex);
-                }
-                finally
-                {
-                    conn.Close();
-                }
-            }
-        }
 
         private void generate_combine()
         {
@@ -119,6 +83,26 @@ namespace corpus_de_duplicates
             return sb.ToString();
         }
 
+        private bool is_similarity(ulong source, ulong target)
+        {
+            ulong x = (source ^ target) & (((1UL << _count_bits - 1) - 1) ^ (1UL << _count_bits - 1));
+            int tot = 0;
+            while (x > 0)
+            {
+                tot += 1;
+                if (tot > 3)
+                {
+                    return false;
+                }
+                x &= x - 1;
+            }
+            if (tot > 3)
+            {
+                return false;
+            }
+            return true;
+        }
+
         private bool connect(Dictionary<string, string> server_config, ref MySqlConnection conn)
         {
             if (conn != null)
@@ -139,12 +123,135 @@ namespace corpus_de_duplicates
             return true;
         }
 
-        public bool insert(string text, ulong fingerprints)
+        #region sentences de_duplicates_related functions
+        public void reset_tables_exclude_corpus()
         {
             MySqlConnection conn = new MySqlConnection();
             if (connect(_server_config, ref conn))
             {
-                MySqlCommand cmd = new MySqlCommand(generate_query_sql(fingerprints), conn);
+                #region //the following tables constrain the table 'corpus'
+                List<string> sql_cols = new List<string>();
+                List<string> sql_indexes_original = new List<string>();
+                List<string> sql_indexes_translation = new List<string>();
+                foreach (IList<int> item in _combinations)
+                {
+                    string com = getstring<int>(item);
+                    sql_cols.Add(string.Format("{0} BIGINT UNSIGNED NOT NULL", "combine_" + com));
+                    sql_indexes_original.Add(string.Format("CREATE INDEX {0} ON original({1}); ", "index_" + com, "combine_" + com));
+                    sql_indexes_translation.Add(string.Format("CREATE INDEX {0} ON translation({1}); ", "index_" + com, "combine_" + com));
+                }
+                string sql_create_article = "Drop TABLE IF EXISTS `article`; " +
+                    "CREATE TABLE article(article_id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, title VARCHAR CHARACTER SET utf8, state INT NOT NULL, translator VARCHAR CHARACTER SET utf8, sentence_count INT NOT NULL);";
+                string sql_create_original = "Drop TABLE IF EXISTS `original`; " +
+                    "CREATE TABLE original(original_id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, sentence TEXT CHARACTER SET utf8 NOT NULL, fingerprints BIGINT UNSIGNED NOT NULL, " +
+                    string.Join(", ", sql_cols.ToArray()) + ");" +
+                    string.Join(", ", sql_indexes_original.ToArray()) + ");";
+                string sql_create_translation = "Drop TABLE IF EXISTS `translation`; " +
+                    "CREATE TABLE translation(translation_id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, sentence TEXT CHARACTER SET utf8 NOT NULL, fingerprints BIGINT UNSIGNED NOT NULL, " +
+                    string.Join(", ", sql_cols.ToArray()) + ");" +
+                    string.Join(", ", sql_indexes_translation.ToArray()) + ");";
+                string sql_create_link = "Drop TABLE IF EXISTS `link`; " +
+                    "CREATE TABLE link(id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, article_id INT NOT NULL, original_id INT NOT NULL, original_order INT NOT NULL, translation_id INT, " +
+                    "FOREIGN KEY(article_id) REFERENCES article(article_id), FOREIGN KEY(original) REFERENCES original(original_id), FOREIGN KEY(translation) REFERENCES translation(translation_id));";
+                #endregion
+
+                MySqlCommand cmd = new MySqlCommand(sql_create_article + sql_create_original + sql_create_translation + sql_create_link, conn);
+                try
+                {
+                    cmd.ExecuteNonQuery();
+                }
+                catch (MySqlException ex)
+                {
+                    Console.WriteLine("ERROR occured at create tables, MESSAGE:" + ex);
+                }
+                finally
+                {
+                    conn.Close();
+                }
+            }
+        }
+
+        public List<string> query_from_corpus()
+        {
+            List<string> files = new List<string>();
+            MySqlConnection conn = new MySqlConnection();
+            if (connect(_server_config, ref conn))
+            {
+                MySqlCommand cmd = new MySqlCommand("SELECT article from corpus", conn);
+                try
+                {
+                    MySqlDataReader data_reader = cmd.ExecuteReader();
+                    while (data_reader.Read())
+                    {
+                        files.Add(data_reader.GetString(0));
+                    }
+                    data_reader.Close();
+                }
+                catch (MySqlException ex)
+                {
+                    Console.WriteLine("ERROR occured at insert, MESSAGE:" + ex);
+                }
+                finally
+                {
+                    conn.Close();
+                }
+            }
+            return files;
+        }
+
+        public bool insert_sentences(Dictionary<string, string> article, Dictionary<string, string> original, Dictionary<string, string> translation, Dictionary<string, string> link)
+        {
+
+            return false;
+        }
+        #endregion
+
+        #region text de_duplicates_related functions
+        public void reset_table_corpus()
+        {
+            MySqlConnection conn = new MySqlConnection();
+            if (connect(_server_config, ref conn))
+            {
+                #region //table corpus contains all the de_duplicates_corpus path, PLEASE DON'T RUN IT AGAIN， RUN IT IS DANGEROUS!!!!
+                List<string> sql_cols = new List<string>();
+                List<string> sql_indexes = new List<string>();
+                foreach (IList<int> item in _combinations)
+                {
+                    string com = getstring<int>(item);
+                    sql_cols.Add(string.Format("{0} BIGINT UNSIGNED NOT NULL", "combine_" + com));
+                    sql_indexes.Add(string.Format("CREATE INDEX {0} ON corpus({1}); ", "index_" + com, "combine_" + com));
+                }
+                string sql = "DROP TABLE IF EXISTS `corpus`; " +
+                    "CREATE TABLE corpus( " +
+                    "id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, " +
+                    "article TEXT CHARACTER SET utf8 NOT NULL, " +
+                    "fingerprints BIGINT UNSIGNED NOT NULL, " +
+                    string.Join(", ", sql_cols.ToArray()) + ");" +
+                    string.Join("", sql_indexes.ToArray());
+                #endregion
+
+                MySqlCommand cmd = new MySqlCommand(sql, conn);
+                try
+                {
+                    cmd.ExecuteNonQuery();
+                }
+                catch (MySqlException ex)
+                {
+                    Console.WriteLine("ERROR occured at create tables, MESSAGE:" + ex);
+                }
+                finally
+                {
+                    conn.Close();
+                }
+            }
+        }
+
+        public bool insert_corpus(string text, ulong fingerprints)
+        {
+            MySqlConnection conn = new MySqlConnection();
+            if (connect(_server_config, ref conn))
+            {
+                MySqlCommand cmd = new MySqlCommand(generate_query_sql_corpus(fingerprints), conn);
                 try
                 {
                     MySqlDataReader data_reader = cmd.ExecuteReader();
@@ -166,8 +273,8 @@ namespace corpus_de_duplicates
                             }
                         }
                     }
-                    //query is over & no similarity fingerprints, can insert the record
-                    cmd = new MySqlCommand(generate_insert_sql(text, fingerprints), conn);
+                    //query is over & no similarity fingerprints, can insert_corpus the record
+                    cmd = new MySqlCommand(generate_insert_sql_corpus(text, fingerprints), conn);
                     cmd.ExecuteNonQuery();
                 }
                 catch (MySqlException ex)
@@ -183,34 +290,13 @@ namespace corpus_de_duplicates
             return false;
         }
 
-        private bool is_similarity(ulong source, ulong target)
-        {
-            ulong x = (source ^ target) & (((1UL << _count_bits - 1) - 1) ^ (1UL << _count_bits - 1));
-            int tot = 0;
-            while (x > 0)
-            {
-                tot += 1;
-                if (tot > 3)
-                {
-                    return false;
-                }
-                x &= x - 1;
-            }
-            if (tot > 3)
-            {
-                return false;
-            }
-            return true;
-        }
-
-        private string generate_insert_sql(string text, ulong fingerprints)
+        private string generate_insert_sql_corpus(string text, ulong fingerprints)
         {
             //todo
             Dictionary<string, ulong> combine_cols_insert = new Dictionary<string,ulong>();
             foreach (var item in _combine_bit_mask)
             {
                 combine_cols_insert.Add(string.Format("combine_{0}", item.Key), (item.Value & fingerprints));
-                //Console.WriteLine(string.Format("{0}, {1:x}, {2:x}", item.Key, item.Value, (item.Value & fingerprints)));
             }
             return "INSERT INTO corpus(article, " +
                 "fingerprints, " + 
@@ -221,7 +307,7 @@ namespace corpus_de_duplicates
                 string.Join("', '", combine_cols_insert.Values) + "');";
         }
 
-        private string generate_query_sql(ulong fingerprints)
+        private string generate_query_sql_corpus(ulong fingerprints)
         {
             List<string> combine_cols_query = new List<string>();
             foreach (var item in _combine_bit_mask)
@@ -230,6 +316,7 @@ namespace corpus_de_duplicates
             }
             return "SELECT id, fingerprints FROM corpus WHERE " + string.Join(" OR ", combine_cols_query) + ";";
         }
+        #endregion
 
         #endregion
     }
