@@ -225,8 +225,152 @@ namespace corpus_de_duplicates
 
         public bool insert_sentences(Link link)
         {
+            string query_article = "SELECT article_id FROM article WHERE article_id = '" + link.article.id + "';";
+            MySqlConnection conn = new MySqlConnection();
+            if (connect(_server_config, ref conn))
+            {
+                MySqlCommand cmd = new MySqlCommand(query_article, conn);
+                try
+                {
+                    MySqlDataReader data_reader = cmd.ExecuteReader();
 
+                    //insert translation sentences
+                    if (data_reader.Read())
+                    {
+                        //todo
+                        data_reader.Close();
+                        return true;
+                    }
+                    else //insert the original sentences
+                    {
+                        data_reader.Close();
+                        string insert_article = "INSERT INTO article(article_id, title, state, translator, sentence_count) VALUES (" +
+                            link.article.id + ", " +
+                            link.article.title + "," +
+                            link.article.state + "," +
+                            link.article.translator + "," +
+                            link.article.count + ");";
+                        List<int> de_duplicated_ids = new List<int>();
+                        string insert_original = string.Join("", generate_insert_original_sql(ref de_duplicated_ids, link.original));
+                        List<string> list_link = new List<string>();
+                        for(int i = 0; i < de_duplicated_ids.Count(); i++)
+                        {
+                            list_link.Add("INSERT INTO link(article_id, original_id, original_order) VALUES ('"+link.article.id+"', '"+link.original.id+"', '"+ i+"');");
+                        }
+                        string insert_link = string.Join("", list_link);
+
+                        cmd = new MySqlCommand(insert_article+insert_original+insert_link, conn);
+                        cmd.ExecuteNonQuery();
+                        return true;
+                    }
+                }
+                catch (MySqlException ex)
+                {
+
+                    Console.WriteLine("ERROR occured at insert_sentences, MESSAGE:" + ex);
+                }
+                finally
+                {
+                    conn.Close();
+                }
+            }
             return false;
+        }
+
+        private List<string> generate_insert_original_sql(ref List<int> de_duplicated_ids, Original original)
+        {
+            MySqlConnection conn = new MySqlConnection();
+            if (connect(_server_config, ref conn))
+            {
+                //query the max id current
+                string query_max_id_original = "SELECT MAX(original_id) FROM orignal;";
+                int max_id = -1;
+                MySqlCommand cmd = new MySqlCommand(query_max_id_original, conn);
+                try
+                {
+                    MySqlDataReader data_reader = cmd.ExecuteReader();
+                    if (data_reader.Read())
+                    {
+                        max_id = data_reader.GetInt32(0);
+                    }
+                    data_reader.Close();
+                }
+                catch (MySqlException ex)
+                {
+                    Console.WriteLine("ERROR occured at " + query_max_id_original + ex);
+                    throw;
+                }
+
+                //generate insert sql based on is similarity
+                List<string> insert_sql = new List<string>();
+                List<string> sql_cols = new List<string>();
+                foreach (IList<int> item in _combinations)
+                {
+                    string com = getstring<int>(item);
+                    sql_cols.Add(string.Format("{0}", "combine_" + com));
+                }
+                foreach (var item in original.sentences_fingerprint)
+                {
+                    cmd = new MySqlCommand(generate_query_original_sql(item.Value), conn);
+                    try
+                    {
+                        MySqlDataReader data_reader = cmd.ExecuteReader();
+                        int duplicated_id = -1;
+                        while (data_reader.Read())
+                        {
+                            if (is_similarity(item.Value, data_reader.GetUInt64(1)))
+                            {
+                                duplicated_id = data_reader.GetInt32(0);
+                                break;
+                            }
+                        }
+                        data_reader.Close();
+
+                        string sql = null;
+                        if (duplicated_id != -1)
+                        {
+                            de_duplicated_ids.Add(duplicated_id);
+                        }
+                        else //query is over & no similarity fingerprints, can insert the sentence
+                        {
+                            List<ulong> combine_cols_insert = new List<ulong>();
+                            de_duplicated_ids.Add(++max_id);
+                            foreach (var bit_mask in _combine_bit_mask)
+                            {
+                                combine_cols_insert.Add((bit_mask.Value & item.Value));
+                            }
+                            sql = "INSERT INTO original(original_id, sentence, fingerprints, " +
+                                string.Join(", ", sql_cols.ToArray()) +
+                                ") VALUES (" +
+                                max_id + ", " +
+                                item.Key + ", " +
+                                string.Join(", ", combine_cols_insert) + ");";
+                        }
+                        insert_sql.Add(sql);
+                    }
+                    catch (MySqlException ex)
+                    {
+                        Console.WriteLine("ERROR occured at insert, MESSAGE:" + ex);
+                    }
+                    finally
+                    {
+                        conn.Close();
+                    }
+                }
+                return insert_sql;
+            }
+
+            return null;
+        }
+
+        private string generate_query_original_sql(ulong fingerprints)
+        {
+            List<string> combine_cols_query = new List<string>();
+            foreach (var item in _combine_bit_mask)
+            {
+                combine_cols_query.Add(string.Format("combine_{0} = {1}", item.Key, (item.Value & fingerprints)));
+            }
+            return "SELECT original_id, fingerprints FROM original WHERE " + string.Join(" OR ", combine_cols_query) + ";";
         }
         #endregion
 

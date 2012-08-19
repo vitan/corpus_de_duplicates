@@ -120,6 +120,7 @@ namespace corpus_de_duplicates
                         article.id = i;
                         article.title = title;
                         article.state = 0;
+                        article.translator = null;
                         article.count = sentences.Count();
 
                         original.id = i;
