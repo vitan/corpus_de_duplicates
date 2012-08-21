@@ -30,22 +30,21 @@ namespace corpus_de_duplicates
             bit_mask.Add(0xFFE00);
             bit_mask.Add(0x1FF);
 
-            //Table table = new Table(server_config, count_bits, count_blocks, num_diff_bits, bit_mask);
-            
-            //DateTime d1 = DateTime.Now;
+            Table table = new Table(server_config, count_bits, count_blocks, num_diff_bits, bit_mask);
+
+            DateTime d1 = DateTime.Now;
             //load_data(table);
-            //DateTime d2 = DateTime.Now;
-            //TimeSpan ts1 = new TimeSpan(d1.Ticks);
-            //TimeSpan ts2 = new TimeSpan(d2.Ticks);
-            //TimeSpan ts = ts1.Subtract(ts2).Duration();
+            load_data_sentences_deduplicates(table);
+            DateTime d2 = DateTime.Now;
+            TimeSpan ts1 = new TimeSpan(d1.Ticks);
+            TimeSpan ts2 = new TimeSpan(d2.Ticks);
+            TimeSpan ts = ts1.Subtract(ts2).Duration();
 
-            //string dateDiff = ts.Days.ToString() + "天"
-            //        + ts.Hours.ToString() + "小时"
-            //        + ts.Minutes.ToString() + "分钟"
-            //        + ts.Seconds.ToString() + "秒";
-            //Console.WriteLine("{0}", dateDiff);
-
-            //test_fingerprint();
+            string dateDiff = ts.Days.ToString() + "天"
+                    + ts.Hours.ToString() + "小时"
+                    + ts.Minutes.ToString() + "分钟"
+                    + ts.Seconds.ToString() + "秒";
+            Console.WriteLine("{0}", dateDiff);
 
             Console.ReadLine();
         }
@@ -93,6 +92,8 @@ namespace corpus_de_duplicates
             table.reset_tables_exclude_corpus();
             List<string> files = table.query_from_corpus();
             string contents = string.Empty;
+
+            int sum = 0;
             for(int i=0; i<files.Count(); i++)
             {
                 Article article = new Article();
@@ -109,12 +110,15 @@ namespace corpus_de_duplicates
 
                         //get the title from contents
                         int title_beg = 0;
-                        int title_end = contents.IndexOf("</title>\n");
-                        string title = contents.Substring(title_beg, title_end-title_beg).Replace("<title>", "");
-                        List<string> sentences = split_article(contents.Substring(title_end+9));
-                        foreach (string item in sentences)
+                        int title_end = contents.IndexOf("</title>");
+                        string title = contents.Substring(title_beg, title_end - title_beg).Replace("<title>", "");
+                        List<string> sentences = split_article(contents.Substring(title_end + 8));
+                        foreach (var item in sentences)
                         {
-                            sentences_fingerprints.Add(item, generate_fingerprint(item, 3, 64));
+                            if (!sentences_fingerprints.ContainsKey(item))
+                            {
+                                sentences_fingerprints.Add(item, generate_fingerprint(item, 3, 64));
+                            }
                         }
 
                         article.id = i;
@@ -124,6 +128,7 @@ namespace corpus_de_duplicates
                         article.count = sentences.Count();
 
                         original.id = i;
+                        original.sentences_order = sentences;
                         original.sentences_fingerprint = sentences_fingerprints;
 
                         link.article = article;
@@ -131,30 +136,13 @@ namespace corpus_de_duplicates
                         link.translation = translation;
 
                         table.insert_sentences(link);
-                    }
 
-                    int count = 1;
-                    int sum = 1;
-                    foreach (string line in contents.Split('\n'))
-                    {
-                        string[] item = line.Split(' ');
-                        using (FileStream fsl = new FileStream(item[0], FileMode.Open))
-                        {
-                            using (StreamReader r = new StreamReader(fsl, Encoding.UTF8))
-                            {
-                                if (table.insert_corpus(mysql_replace(r.ReadToEnd()), Convert.ToUInt64(item[1])))
-                                    if (table.insert_corpus(item[0], Convert.ToUInt64(item[1])))
-                                    {
-                                        count += 1;
-                                    }
-                            }
-                        }
-                        Console.WriteLine(string.Format("{0}", sum));
-                        sum += 1;
+                        sum += sentences.Count();
                     }
-                    Console.WriteLine(string.Format("count: {0}, sum: {1}", count, sum));
                 }
+                Console.WriteLine(files[i]);
             }
+            Console.WriteLine(string.Format("sentences sum is {0}", sum));
         }
 
         static List<string> split_article(string article)

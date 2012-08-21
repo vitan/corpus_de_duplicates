@@ -18,6 +18,7 @@ namespace corpus_de_duplicates
     struct Original
     {
         public int id;
+        public List<string> sentences_order;
         public Dictionary<string, ulong> sentences_fingerprint;
     }
     struct Translation
@@ -164,22 +165,19 @@ namespace corpus_de_duplicates
                     sql_indexes_original.Add(string.Format("CREATE INDEX {0} ON original({1}); ", "index_" + com, "combine_" + com));
                     sql_indexes_translation.Add(string.Format("CREATE INDEX {0} ON translation({1}); ", "index_" + com, "combine_" + com));
                 }
-                string sql_create_article = "Drop TABLE IF EXISTS `article`; " +
-                    "CREATE TABLE article(article_id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, title VARCHAR CHARACTER SET utf8, state INT NOT NULL, translator VARCHAR CHARACTER SET utf8, sentence_count INT NOT NULL);";
-                string sql_create_original = "Drop TABLE IF EXISTS `original`; " +
-                    "CREATE TABLE original(original_id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, sentence TEXT CHARACTER SET utf8 NOT NULL, fingerprints BIGINT UNSIGNED NOT NULL, " +
+                string sql_drop_tables = "Drop TABLE IF EXISTS `link`; Drop TABLE IF EXISTS `article`; Drop TABLE IF EXISTS `translation`; Drop TABLE IF EXISTS `original`; ";                   
+                string sql_create_article = "CREATE TABLE article(article_id INT NOT NULL PRIMARY KEY, title VARCHAR(1024) CHARACTER SET utf8, state INT NOT NULL, translator VARCHAR(128) CHARACTER SET utf8, sentence_count INT NOT NULL);";
+                string sql_create_original = "CREATE TABLE original(original_id INT NOT NULL PRIMARY KEY, sentence TEXT CHARACTER SET utf8 NOT NULL, fingerprints BIGINT UNSIGNED NOT NULL, " +
                     string.Join(", ", sql_cols.ToArray()) + ");" +
-                    string.Join(", ", sql_indexes_original.ToArray()) + ");";
-                string sql_create_translation = "Drop TABLE IF EXISTS `translation`; " +
-                    "CREATE TABLE translation(translation_id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, sentence TEXT CHARACTER SET utf8 NOT NULL, fingerprints BIGINT UNSIGNED NOT NULL, " +
+                    string.Join("", sql_indexes_original.ToArray());
+                string sql_create_translation = "CREATE TABLE translation(translation_id INT NOT NULL PRIMARY KEY, sentence TEXT CHARACTER SET utf8 NOT NULL, fingerprints BIGINT UNSIGNED NOT NULL, " +
                     string.Join(", ", sql_cols.ToArray()) + ");" +
-                    string.Join(", ", sql_indexes_translation.ToArray()) + ");";
-                string sql_create_link = "Drop TABLE IF EXISTS `link`; " +
-                    "CREATE TABLE link(id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, article_id INT NOT NULL, original_id INT NOT NULL, original_order INT NOT NULL, translation_id INT, " +
-                    "FOREIGN KEY(article_id) REFERENCES article(article_id), FOREIGN KEY(original) REFERENCES original(original_id), FOREIGN KEY(translation) REFERENCES translation(translation_id));";
+                    string.Join("", sql_indexes_translation.ToArray());
+                string sql_create_link = "CREATE TABLE link(id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, article_id INT NOT NULL, original_id INT NOT NULL, original_order INT NOT NULL, translation_id INT, " +
+                    "FOREIGN KEY(article_id) REFERENCES article(article_id), FOREIGN KEY(original_id) REFERENCES original(original_id), FOREIGN KEY(translation_id) REFERENCES translation(translation_id));";
                 #endregion
 
-                MySqlCommand cmd = new MySqlCommand(sql_create_article + sql_create_original + sql_create_translation + sql_create_link, conn);
+                MySqlCommand cmd = new MySqlCommand(sql_drop_tables + sql_create_article + sql_create_original + sql_create_translation + sql_create_link, conn);
                 try
                 {
                     cmd.ExecuteNonQuery();
@@ -187,6 +185,7 @@ namespace corpus_de_duplicates
                 catch (MySqlException ex)
                 {
                     Console.WriteLine("ERROR occured at create tables, MESSAGE:" + ex);
+                    throw;
                 }
                 finally
                 {
@@ -214,6 +213,7 @@ namespace corpus_de_duplicates
                 catch (MySqlException ex)
                 {
                     Console.WriteLine("ERROR occured at insert, MESSAGE:" + ex);
+                    throw;
                 }
                 finally
                 {
@@ -244,30 +244,31 @@ namespace corpus_de_duplicates
                     else //insert the original sentences
                     {
                         data_reader.Close();
-                        string insert_article = "INSERT INTO article(article_id, title, state, translator, sentence_count) VALUES (" +
-                            link.article.id + ", " +
-                            link.article.title + "," +
-                            link.article.state + "," +
-                            link.article.translator + "," +
-                            link.article.count + ");";
-                        List<int> de_duplicated_ids = new List<int>();
-                        string insert_original = string.Join("", generate_insert_original_sql(ref de_duplicated_ids, link.original));
+                        string insert_article = "INSERT INTO article(article_id, title, state, translator, sentence_count) VALUES ('" +
+                            link.article.id + "', '" +
+                            link.article.title + "', '" +
+                            link.article.state + "', '" +
+                            link.article.translator + "', '" +
+                            link.article.count + "');";
+                        List<int> de_duplicated_ids = new List<int>(new int[link.article.count]);
+                        string insert_original = string.Join(" ", generate_insert_original_sql(ref de_duplicated_ids, link.original));
                         List<string> list_link = new List<string>();
-                        for(int i = 0; i < de_duplicated_ids.Count(); i++)
+                        for (int i = 0; i < de_duplicated_ids.Count(); i++)
                         {
-                            list_link.Add("INSERT INTO link(article_id, original_id, original_order) VALUES ('"+link.article.id+"', '"+link.original.id+"', '"+ i+"');");
+                            list_link.Add("INSERT INTO link(article_id, original_id, original_order) VALUES ('" + link.article.id + "', '" + de_duplicated_ids[i] + "', '" + i + "');");
                         }
                         string insert_link = string.Join("", list_link);
 
-                        cmd = new MySqlCommand(insert_article+insert_original+insert_link, conn);
+                        cmd = new MySqlCommand(insert_article + insert_original + insert_link, conn);
+                        //cmd = new MySqlCommand(insert_article + insert_original, conn);
                         cmd.ExecuteNonQuery();
                         return true;
                     }
                 }
                 catch (MySqlException ex)
                 {
-
                     Console.WriteLine("ERROR occured at insert_sentences, MESSAGE:" + ex);
+                    throw;
                 }
                 finally
                 {
@@ -283,7 +284,7 @@ namespace corpus_de_duplicates
             if (connect(_server_config, ref conn))
             {
                 //query the max id current
-                string query_max_id_original = "SELECT MAX(original_id) FROM orignal;";
+                string query_max_id_original = "SELECT coalesce(MAX(original_id), -1) FROM original;";
                 int max_id = -1;
                 MySqlCommand cmd = new MySqlCommand(query_max_id_original, conn);
                 try
@@ -309,11 +310,13 @@ namespace corpus_de_duplicates
                     string com = getstring<int>(item);
                     sql_cols.Add(string.Format("{0}", "combine_" + com));
                 }
-                foreach (var item in original.sentences_fingerprint)
+                int sentences_count = original.sentences_order.Count();
+                try
                 {
-                    cmd = new MySqlCommand(generate_query_original_sql(item.Value), conn);
-                    try
+                    foreach (var item in original.sentences_fingerprint)
                     {
+                        cmd = new MySqlCommand(generate_query_original_sql(item.Value), conn);
+                    
                         MySqlDataReader data_reader = cmd.ExecuteReader();
                         int duplicated_id = -1;
                         while (data_reader.Read())
@@ -326,40 +329,49 @@ namespace corpus_de_duplicates
                         }
                         data_reader.Close();
 
-                        string sql = null;
                         if (duplicated_id != -1)
                         {
-                            de_duplicated_ids.Add(duplicated_id);
+                            for (int i = 0; i < sentences_count; i++)
+                            {
+                                if(original.sentences_order[i].CompareTo(item.Key) == 0)
+                                    de_duplicated_ids[i] = duplicated_id;                                
+                            }
                         }
                         else //query is over & no similarity fingerprints, can insert the sentence
                         {
+                            ++max_id;
                             List<ulong> combine_cols_insert = new List<ulong>();
-                            de_duplicated_ids.Add(++max_id);
+                            for (int i = 0; i < sentences_count; i++)
+                            {
+                                if(original.sentences_order[i].CompareTo(item.Key) == 0)
+                                    de_duplicated_ids[i] = max_id;                                
+                            }
                             foreach (var bit_mask in _combine_bit_mask)
                             {
                                 combine_cols_insert.Add((bit_mask.Value & item.Value));
                             }
-                            sql = "INSERT INTO original(original_id, sentence, fingerprints, " +
+                            string sql = "INSERT INTO original(original_id, sentence, fingerprints, " +
                                 string.Join(", ", sql_cols.ToArray()) +
-                                ") VALUES (" +
-                                max_id + ", " +
-                                item.Key + ", " +
-                                string.Join(", ", combine_cols_insert) + ");";
+                                ") VALUES ('" +
+                                max_id + "', '" +
+                                item.Key + "', '" +
+                                item.Value + "', '" +
+                                string.Join("', '", combine_cols_insert) + "');";
+                            insert_sql.Add(sql);
                         }
-                        insert_sql.Add(sql);
                     }
-                    catch (MySqlException ex)
-                    {
-                        Console.WriteLine("ERROR occured at insert, MESSAGE:" + ex);
-                    }
-                    finally
-                    {
-                        conn.Close();
-                    }
+                }
+                catch (MySqlException ex)
+                {
+                    Console.WriteLine("ERROR occured at insert, MESSAGE:" + ex);
+                    throw;
+                }
+                finally
+                {
+                    conn.Close();
                 }
                 return insert_sql;
             }
-
             return null;
         }
 
@@ -406,6 +418,7 @@ namespace corpus_de_duplicates
                 catch (MySqlException ex)
                 {
                     Console.WriteLine("ERROR occured at create tables, MESSAGE:" + ex);
+                    throw;
                 }
                 finally
                 {
@@ -448,6 +461,7 @@ namespace corpus_de_duplicates
                 catch (MySqlException ex)
                 {
                     Console.WriteLine("ERROR occured at insert, MESSAGE:" + ex);
+                    throw;
                 }
                 finally
                 {
